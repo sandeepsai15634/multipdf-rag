@@ -7,13 +7,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import RetrievalQA
 
 
 # ===============================
-# Page Config
+# Page Configuration
 # ===============================
 st.set_page_config(page_title="Multi PDF QA Bot", layout="wide")
 
@@ -95,28 +93,15 @@ if st.button("Process PDFs"):
             vectorstore = FAISS.from_documents(chunks, embeddings)
             retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-            # Prompt Template
-            prompt = ChatPromptTemplate.from_template("""
-You are a helpful assistant.
-Answer ONLY from the provided context.
-If the answer is not found in the context, say:
-"I cannot find the answer in the provided documents."
-
-<context>
-{context}
-</context>
-
-Question: {input}
-""")
-
-            document_chain = create_stuff_documents_chain(llm, prompt)
-
-            retrieval_chain = create_retrieval_chain(
-                retriever,
-                document_chain
+            # Stable RetrievalQA Chain
+            qa_chain = RetrievalQA.from_chain_type(
+                llm=llm,
+                chain_type="stuff",
+                retriever=retriever,
+                return_source_documents=True
             )
 
-            st.session_state.retrieval_chain = retrieval_chain
+            st.session_state.retrieval_chain = qa_chain
 
             st.success("✅ PDFs processed successfully!")
 
@@ -131,15 +116,13 @@ if query:
         st.warning("⚠️ Please process PDFs first.")
     else:
         with st.spinner("Thinking..."):
-            result = st.session_state.retrieval_chain.invoke(
-                {"input": query}
-            )
+            result = st.session_state.retrieval_chain({"query": query})
 
             st.subheader("Answer")
-            st.write(result["answer"])
+            st.write(result["result"])
 
             with st.expander("View Source Chunks"):
-                for doc in result["context"]:
+                for doc in result["source_documents"]:
                     st.write("Page:", doc.metadata.get("page", "Unknown"))
                     st.write(doc.page_content[:500])
                     st.write("---")
